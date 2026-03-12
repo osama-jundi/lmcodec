@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.llmz
+*.gz
+*.bz2
+.pytest_cache/
+../osama79921919948/2025(2)/Thesis 3.0/lmcodec/.venv/
+venv/
+*.pt
+*.bin
+*.safetensors
+data/
+results/
+models_cache/

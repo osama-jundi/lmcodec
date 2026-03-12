@@ -1,0 +1,14 @@
+# Core dependencies
+torch==2.2.0
+transformers>=4.30.0
+constriction>=0.3.0
+numpy>=1.24.0
+
+# Optional: for larger models (Phi-2, Mistral-7B)
+accelerate>=0.20.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Development and testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
