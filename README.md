@@ -25,10 +25,10 @@ pip install -r requirements.txt
 python test_smoke.py
 
 # 3. Сжатие файла
-python examples/compress_file.py compress input.txt output.llmz --model gpt2
+python examples/compress_file.py compress input.txt output.lmc --model gpt2
 
 # 4. Декомпрессия
-python examples/compress_file.py decompress output.llmz restored.txt
+python examples/compress_file.py decompress output.lmc restored.txt
 
 # 5. Бенчмарк
 python examples/benchmark.py --input input.txt --models gpt2 gpt2-medium
@@ -47,7 +47,7 @@ src/lmcodec/
 ├── arithmetic.py           # Арифметическое кодирование (раздел 1.2, 2.2)
 ├── compressor.py           # Конвейер сжатия (раздел 2.2)
 ├── decompressor.py         # Конвейер декомпрессии (раздел 2.3)
-└── file_format.py          # Формат файла .llmz (раздел 2.5)
+└── file_format.py          # Формат файла .lmc (раздел 2.5)
 ```
 
 ## Соответствие главам диссертации
@@ -60,7 +60,7 @@ src/lmcodec/
 | Глава 2.2 | `compressor.py` | Алгоритм сжатия |
 | Глава 2.3 | `decompressor.py` | Процедура декомпрессии |
 | Глава 2.4 | `context.py` | Управление контекстным окном |
-| Глава 2.5 | `file_format.py` | Формат .llmz |
+| Глава 2.5 | `file_format.py` | Формат .lmc |
 
 ## Лицензия
 

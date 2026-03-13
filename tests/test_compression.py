@@ -125,7 +125,7 @@ def test_context_manager():
 
 def test_file_format():
     print("\n" + "=" * 60)
-    print("ТЕСТ: Формат файла .llmz")
+    print("ТЕСТ: Формат файла .lmc")
     print("=" * 60)
 
     metadata = FileMetadata(
@@ -142,7 +142,7 @@ def test_file_format():
 
     compressed_data = np.array([1, 2, 3, 4, 5], dtype=np.uint32)
 
-    temp_path = os.path.join(tempfile.gettempdir(), "test_llmzip_full.llmz")
+    temp_path = os.path.join(tempfile.gettempdir(), "test_lmcodec.lmc")
 
     try:
         save_compressed(temp_path, metadata, compressed_data)
@@ -176,12 +176,12 @@ def test_compression_lossless(model_key: str = "gpt2"):
         "Large language models can serve as powerful probability estimators "
         "for arithmetic coding, potentially achieving compression ratios "
         "that surpass traditional methods like GZIP and BZIP2. "
-        "This is a test of the LLMZip compression system. "
+        "This is a test of the LMCodec compression system. "
     ) * 3
 
     with tempfile.TemporaryDirectory() as tmpdir:
         input_path = os.path.join(tmpdir, "input.txt")
-        compressed_path = os.path.join(tmpdir, "output.llmz")
+        compressed_path = os.path.join(tmpdir, "output.lmc")
         restored_path = os.path.join(tmpdir, "restored.txt")
 
         with open(input_path, "w") as f:
@@ -215,7 +215,7 @@ def test_compression_lossless(model_key: str = "gpt2"):
 
 def run_all_tests():
     print("=" * 60)
-    print("LLMZip v2.0 — Полный набор тестов")
+    print("LMCodec v2.0 — Полный набор тестов")
     print("=" * 60)
 
     test_list_models()

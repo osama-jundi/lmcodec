@@ -44,13 +44,13 @@ def cmd_models(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LLMZip — сжатие данных без потерь на основе LLM"
+        description="LMCodec — сжатие данных без потерь на основе LLM"
     )
     subparsers = parser.add_subparsers(dest="command")
 
     p_comp = subparsers.add_parser("compress", help="Сжатие файла")
     p_comp.add_argument("input", help="Входной файл")
-    p_comp.add_argument("output", help="Выходной файл .llmz")
+    p_comp.add_argument("output", help="Выходной файл .lmc")
     p_comp.add_argument("--model", default="gpt2",
                         help="Модель (по умолчанию: gpt2)")
     p_comp.add_argument("--device", default=None,
@@ -61,7 +61,7 @@ def main():
     p_comp.set_defaults(func=cmd_compress)
 
     p_dec = subparsers.add_parser("decompress", help="Декомпрессия файла")
-    p_dec.add_argument("input", help="Файл .llmz")
+    p_dec.add_argument("input", help="Файл .lmc")
     p_dec.add_argument("output", help="Выходной файл")
     p_dec.add_argument("--device", default=None, help="Устройство")
     p_dec.set_defaults(func=cmd_decompress)

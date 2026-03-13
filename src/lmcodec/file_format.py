@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-MAGIC_BYTES = b"LLMZ"
+MAGIC_BYTES = b"LMCO"
 FORMAT_VERSION = 3
 
 

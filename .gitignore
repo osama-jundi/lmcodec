@@ -5,7 +5,7 @@ __pycache__/
 dist/
 build/
 .eggs/
-*.llmz
+*.lmc
 *.gz
 *.bz2
 .pytest_cache/

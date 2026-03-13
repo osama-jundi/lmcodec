@@ -54,7 +54,7 @@ def compress_llm(
     original_size = os.path.getsize(input_path)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        compressed_path = os.path.join(tmpdir, "out.llmz")
+        compressed_path = os.path.join(tmpdir, "out.lmc")
         restored_path = os.path.join(tmpdir, "restored.txt")
 
         compressor = Compressor(

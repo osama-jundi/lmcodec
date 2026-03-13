@@ -79,7 +79,7 @@ def benchmark_llm(input_path: str, model_key: str, device: str = None) -> dict:
     original_size = os.path.getsize(input_path)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        compressed_path = os.path.join(tmpdir, "compressed.llmz")
+        compressed_path = os.path.join(tmpdir, "compressed.lmc")
         restored_path = os.path.join(tmpdir, "restored.txt")
 
         compressor = Compressor(model_key=model_key, device=device)
@@ -142,7 +142,7 @@ def save_results(results: list[dict], output_path: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Бенчмарк LLMZip — сравнение с традиционными методами"
+        description="Бенчмарк LMCodec — сравнение с традиционными методами"
     )
     parser.add_argument("--input", required=True, help="Входной файл")
     parser.add_argument("--models", nargs="+", default=["gpt2"],

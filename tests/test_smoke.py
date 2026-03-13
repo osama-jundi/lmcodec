@@ -56,7 +56,7 @@ def test_arithmetic():
 
 
 def test_file_format():
-    print("4. Проверка формата файла .llmz...")
+    print("4. Проверка формата файла .lmc...")
     import os
     import tempfile
     import numpy as np
@@ -69,13 +69,13 @@ def test_file_format():
     )
     data = np.array([1, 2, 3], dtype=np.uint32)
 
-    temp_path = os.path.join(tempfile.gettempdir(), "test_llmzip.llmz")
+    temp_path = os.path.join(tempfile.gettempdir(), "test_lmcodec.lmc")
     try:
         save_compressed(temp_path, meta, data)
         m2, d2 = load_compressed(temp_path)
         assert m2.model_key == "gpt2"
         assert list(d2) == [1, 2, 3]
-        print("   ✓ Запись/чтение .llmz OK")
+        print("   ✓ Запись/чтение .lmc OK")
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
@@ -83,7 +83,7 @@ def test_file_format():
 
 def main():
     print("=" * 50)
-    print("LLMZip v2.0 — Smoke Test")
+    print("LMCodec v2.0 — Smoke Test")
     print("=" * 50)
 
     test_imports()
