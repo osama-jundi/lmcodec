@@ -8,7 +8,9 @@ from lmcodec.context import ContextManager, ContextStrategy
 from lmcodec.file_format import FileMetadata, compute_hash, save_compressed
 from lmcodec.models import BaseProbabilityModel
 from lmcodec.models import create_model
+from lmcodec.models.registry import MODEL_CONFIGS
 from lmcodec.preprocessing import Preprocessor
+from lmcodec.utils import stabilize_probabilities
 
 
 class Compressor:
@@ -20,6 +22,13 @@ class Compressor:
         context_strategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW,
         encoding: str = "utf-8",
     ):
+        # Bug 4 fix: validate model_key early instead of failing deep in the pipeline
+        if model_key not in MODEL_CONFIGS:
+            available = ", ".join(sorted(MODEL_CONFIGS.keys()))
+            raise ValueError(
+                f"Неизвестная модель: '{model_key}'. Доступные: {available}"
+            )
+
         self.model_key = model_key
         self.device = device
         self.context_strategy = context_strategy
@@ -51,8 +60,8 @@ class Compressor:
             print(f"\n[COMPRESS] Входной файл: {input_path}")
 
         raw_text = self._preprocessor.read_file(input_path)
-        text = self._preprocessor.preprocess(raw_text)
-        original_bytes = text.encode(self.encoding)
+        text, preproc_info = self._preprocessor.preprocess(raw_text)
+        original_bytes = raw_text.encode(self.encoding)
         original_size = len(original_bytes)
         original_hash = compute_hash(original_bytes)
 
@@ -65,8 +74,6 @@ class Compressor:
         if verbose:
             print(f"[COMPRESS] Токенов: {num_tokens}")
             print(f"[COMPRESS] Модель: {self.model_key}")
-
-        if verbose:
             print(f"[COMPRESS] Фаза 1: вычисление вероятностей (с KV-cache)...")
 
         if hasattr(self._model, 'reset_cache'):
@@ -82,17 +89,16 @@ class Compressor:
             else:
                 probs = self._model.get_probabilities(context)
 
-            probs = _stabilize_probabilities(probs, self._model.vocab_size)
+            probs = stabilize_probabilities(probs, self._model.vocab_size)
             all_probs.append(probs)
 
             if verbose and (i + 1) % 100 == 0:
                 pct = (i + 1) / num_tokens * 100
-                print(f"\r[COMPRESS] Фаза 1: {i+1}/{num_tokens} ({pct:.1f}%)", end="", flush=True)
+                print(f"\r[COMPRESS] Фаза 1: {i+1}/{num_tokens} ({pct:.1f}%)",
+                      end="", flush=True)
 
         if verbose:
             print(f"\r[COMPRESS] Фаза 1: {num_tokens}/{num_tokens} (100.0%)")
-
-        if verbose:
             print(f"[COMPRESS] Фаза 2: арифметическое кодирование...")
 
         encoder = ArithmeticEncoder()
@@ -115,6 +121,7 @@ class Compressor:
             num_tokens=num_tokens,
             original_size=original_size,
             original_hash=original_hash,
+            preproc_info=preproc_info,
         )
 
         compressed_size = save_compressed(
@@ -145,17 +152,3 @@ class Compressor:
             print(f"[COMPRESS] Время: {elapsed:.2f} с")
 
         return results
-
-
-def _stabilize_probabilities(probs: np.ndarray, vocab_size: int) -> np.ndarray:
-    min_prob = 1e-10
-    probs = np.maximum(probs, min_prob)
-
-    if len(probs) > vocab_size:
-        probs = probs[:vocab_size]
-    elif len(probs) < vocab_size:
-        padding = np.full(vocab_size - len(probs), min_prob)
-        probs = np.concatenate([probs, padding])
-
-    probs /= probs.sum()
-    return probs

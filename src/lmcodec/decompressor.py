@@ -5,10 +5,11 @@ import numpy as np
 
 from lmcodec.arithmetic import ArithmeticDecoder
 from lmcodec.context import ContextManager, ContextStrategy
-from lmcodec.file_format import  compute_hash, load_compressed
+from lmcodec.file_format import compute_hash, load_compressed
 from lmcodec.models import BaseProbabilityModel
 from lmcodec.models import create_model
 from lmcodec.preprocessing import Preprocessor
+from lmcodec.utils import stabilize_probabilities
 
 
 class Decompressor:
@@ -18,14 +19,15 @@ class Decompressor:
         device: Optional[str] = None,
     ):
         self.device = device
-        self._models_cache: dict[str, BaseProbabilityModel] = {}
+        self._model: Optional[BaseProbabilityModel] = None
+        self._loaded_key: Optional[str] = None
 
     def _get_model(self, model_key: str) -> BaseProbabilityModel:
-        if model_key not in self._models_cache:
-            model = create_model(model_key, self.device)
-            model.load()
-            self._models_cache[model_key] = model
-        return self._models_cache[model_key]
+        if self._loaded_key != model_key:
+            self._model = create_model(model_key, self.device)
+            self._model.load()
+            self._loaded_key = model_key
+        return self._model
 
     def decompress(
         self,
@@ -69,14 +71,15 @@ class Decompressor:
             else:
                 probs = model.get_probabilities(context)
 
-            probs = _stabilize_probabilities(probs, model.vocab_size)
+            probs = stabilize_probabilities(probs, model.vocab_size)
 
             token_id = decoder.decode_symbol(probs)
             decoded_tokens.append(token_id)
 
             if verbose and (i + 1) % 100 == 0:
                 pct = (i + 1) / num_tokens * 100
-                print(f"\r[DECOMPRESS] Прогресс: {i+1}/{num_tokens} ({pct:.1f}%)", end="", flush=True)
+                print(f"\r[DECOMPRESS] Прогресс: {i+1}/{num_tokens} ({pct:.1f}%)",
+                      end="", flush=True)
 
         if verbose:
             print(f"\r[DECOMPRESS] Прогресс: {num_tokens}/{num_tokens} (100.0%)")
@@ -84,7 +87,8 @@ class Decompressor:
         text = model.decode_tokens(decoded_tokens)
 
         preprocessor = Preprocessor(encoding=metadata.encoding)
-        restored_text = preprocessor.reverse_preprocess(text)
+        # Bug 2 fix: actually reverse preprocessing using stored metadata
+        restored_text = preprocessor.reverse_preprocess(text, metadata.preproc_info)
 
         restored_bytes = restored_text.encode(metadata.encoding)
         restored_hash = compute_hash(restored_bytes)
@@ -111,23 +115,9 @@ class Decompressor:
         }
 
         if verbose:
-            status = "✓ ДА" if is_lossless else "✗ НЕТ"
+            status = "ДА" if is_lossless else "НЕТ"
             print(f"[DECOMPRESS] Без потерь: {status}")
             print(f"[DECOMPRESS] Время: {elapsed:.2f} с")
             print(f"[DECOMPRESS] Файл: {output_path}")
 
         return results
-
-
-def _stabilize_probabilities(probs: np.ndarray, vocab_size: int) -> np.ndarray:
-    min_prob = 1e-10
-    probs = np.maximum(probs, min_prob)
-
-    if len(probs) > vocab_size:
-        probs = probs[:vocab_size]
-    elif len(probs) < vocab_size:
-        padding = np.full(vocab_size - len(probs), min_prob)
-        probs = np.concatenate([probs, padding])
-
-    probs /= probs.sum()
-    return probs

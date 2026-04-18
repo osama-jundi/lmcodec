@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 import constriction
 
@@ -8,7 +6,6 @@ class ArithmeticEncoder:
 
     def __init__(self):
         self._encoder = None
-        self._encoded_data: Optional[np.ndarray] = None
 
     def create_encoder(self) -> None:
         self._encoder = constriction.stream.stack.AnsCoder()
@@ -32,6 +29,7 @@ class ArithmeticEncoder:
 
     def get_compressed_size_bits(self) -> int:
         compressed = self._encoder.get_compressed()
+        # Each element is a uint32 word = 32 bits
         return len(compressed) * 32
 
 

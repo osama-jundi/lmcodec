@@ -36,6 +36,16 @@ class HuggingFaceCausalModel(BaseProbabilityModel):
         if self._cache_dir:
             print(f"[MODEL] Кеш: {self._cache_dir}")
 
+        # Fix 3b: set deterministic algorithm flag so that any non-deterministic
+        # CUDA kernel will warn (warn_only=True keeps the code runnable even when
+        # a deterministic equivalent is missing for a specific op).
+        torch.manual_seed(0)
+        try:
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        except Exception:
+            # Older torch versions may not support warn_only; that is fine.
+            pass
+
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
             trust_remote_code=self._trust_remote_code,

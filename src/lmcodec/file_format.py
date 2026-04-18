@@ -1,13 +1,16 @@
 import hashlib
 import json
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
 MAGIC_BYTES = b"LMCO"
-FORMAT_VERSION = 3
+# Format version bumped to 4 because metadata now carries preproc_info.
+# Older (v3) files remain readable — preproc_info defaults to None.
+FORMAT_VERSION = 4
 
 
 @dataclass
@@ -21,6 +24,9 @@ class FileMetadata:
     num_tokens: int = 0
     original_size: int = 0
     original_hash: str = ""
+    # New in v4 — information needed to exactly reverse preprocessing.
+    # For files produced by v3 this field is absent in JSON and stays None.
+    preproc_info: Optional[dict] = None
 
 
 def compute_hash(data: bytes) -> str:
@@ -33,7 +39,9 @@ def save_compressed(
     compressed_data: np.ndarray,
 ) -> int:
     meta_json = json.dumps(metadata.__dict__, ensure_ascii=False).encode("utf-8")
-    compressed_bytes = compressed_data.tobytes()
+    # Bug 7 note: compressed_data is uint32 native byte order. We write it as-is.
+    # All mainstream platforms are little-endian, but we document this assumption.
+    compressed_bytes = compressed_data.astype("<u4").tobytes()
 
     with open(filepath, "wb") as f:
         f.write(MAGIC_BYTES)
@@ -67,10 +75,15 @@ def load_compressed(filepath: str) -> tuple[FileMetadata, np.ndarray]:
         meta_len = struct.unpack("<I", f.read(4))[0]
         meta_json = f.read(meta_len).decode("utf-8")
         meta_dict = json.loads(meta_json)
+        # Tolerate fields that the current class does not know about.
+        known_fields = set(FileMetadata.__dataclass_fields__.keys())
+        meta_dict = {k: v for k, v in meta_dict.items() if k in known_fields}
         metadata = FileMetadata(**meta_dict)
 
         compressed_len = struct.unpack("<I", f.read(4))[0]
         compressed_bytes = f.read(compressed_len)
-        compressed_data = np.frombuffer(compressed_bytes, dtype=np.uint32).copy()
+        # Explicit little-endian read so compressed data is portable across
+        # architectures (fixes the theoretical endian issue).
+        compressed_data = np.frombuffer(compressed_bytes, dtype="<u4").astype(np.uint32).copy()
 
     return metadata, compressed_data
