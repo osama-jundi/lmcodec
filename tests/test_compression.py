@@ -1,3 +1,12 @@
+"""
+Full compression tests for lmcodec.
+
+The last test (test_compression_lossless) loads GPT-2 (~500 MB) and
+requires a working PyTorch install.
+
+Run: python tests/test_compression.py
+Or:  pytest tests/test_compression.py
+"""
 import os
 import sys
 import tempfile
@@ -5,12 +14,15 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Allow running directly without pip install -e .
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC = REPO_ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from lmcodec import Compressor, Decompressor, ContextStrategy, list_available_models
 from lmcodec.arithmetic import ArithmeticEncoder, ArithmeticDecoder
-from lmcodec.context import ContextManager, ContextStrategy
+from lmcodec.context import ContextManager
 from lmcodec.file_format import FileMetadata, save_compressed, load_compressed
 from lmcodec.preprocessing import Preprocessor
 
@@ -70,26 +82,45 @@ def test_arithmetic_coding():
 
 
 def test_preprocessing():
+    """
+    Bug 2 fix verification: preprocessing must be byte-exactly reversible
+    for any combination of line endings (\\r\\n, \\r, \\n, mixed).
+    """
     print("\n" + "=" * 60)
-    print("ТЕСТ: Предобработка")
+    print("ТЕСТ: Предобработка (побитовая обратимость)")
     print("=" * 60)
 
     preprocessor = Preprocessor()
 
     test_cases = [
-        "Hello, World!",
-        "Line1\nLine2\nLine3",
-        "Mixed\r\nline\rendings\n",
-        "Привет, мир! Unicode тест 🎉",
-        "",
+        "Hello, World!",                       # no newlines
+        "Line1\nLine2\nLine3",                 # LF only
+        "Line1\r\nLine2\r\nLine3",             # CRLF only (Windows)
+        "Line1\rLine2\rLine3",                 # CR only (old Mac)
+        "Mixed\r\nline\rendings\n",            # all three, mixed
+        "Привет, мир! Unicode тест 🎉\n",       # Unicode + LF
+        "",                                    # empty
+        "\n\n\n",                              # only newlines
+        "No trailing newline",                 # no final EOL
     ]
 
     for text in test_cases:
-        processed = preprocessor.preprocess(text)
-        restored = preprocessor.reverse_preprocess(processed)
-        expected = text.replace("\r\n", "\n").replace("\r", "\n")
-        assert restored == expected, f"Не совпадает: {text!r}"
-        print(f"  '{text[:30]}...' → OK")
+        # New API: preprocess returns (normalized_text, info_dict)
+        processed, info = preprocessor.preprocess(text)
+        # All newline variants must be \n in the normalized text
+        if "\r" in text or "\n" in text:
+            assert "\r" not in processed, \
+                f"Нормализованный текст содержит \\r: {processed!r}"
+
+        # reverse_preprocess must reproduce the ORIGINAL bytes exactly
+        restored = preprocessor.reverse_preprocess(processed, info)
+        assert restored == text, (
+            f"Побитовая обратимость нарушена.\n"
+            f"  Оригинал:    {text!r}\n"
+            f"  Восстанов.:  {restored!r}"
+        )
+        preview = text[:30].replace("\r", "\\r").replace("\n", "\\n")
+        print(f"  '{preview}' → OK")
 
     print("✓ Пройден")
 
@@ -101,7 +132,9 @@ def test_context_manager():
 
     tokens = list(range(20))
 
-    cm = ContextManager(max_context_length=5, strategy=ContextStrategy.SLIDING_WINDOW)
+    cm = ContextManager(
+        max_context_length=5, strategy=ContextStrategy.SLIDING_WINDOW
+    )
 
     ctx = cm.get_context(tokens, 0)
     assert ctx == [], f"Ожидался [], получено {ctx}"
@@ -114,7 +147,9 @@ def test_context_manager():
 
     print("  Скользящее окно: OK")
 
-    cm_block = ContextManager(max_context_length=5, strategy=ContextStrategy.BLOCK)
+    cm_block = ContextManager(
+        max_context_length=5, strategy=ContextStrategy.BLOCK
+    )
 
     ctx = cm_block.get_context(tokens, 7)
     assert ctx == [5, 6], f"Ожидалось [5,6], получено {ctx}"
@@ -124,8 +159,9 @@ def test_context_manager():
 
 
 def test_file_format():
+    """Verify round-trip of metadata including the new preproc_info field."""
     print("\n" + "=" * 60)
-    print("ТЕСТ: Формат файла .lmc")
+    print("ТЕСТ: Формат файла .lmc (v4 с preproc_info)")
     print("=" * 60)
 
     metadata = FileMetadata(
@@ -138,6 +174,7 @@ def test_file_format():
         num_tokens=100,
         original_size=500,
         original_hash="abc123",
+        preproc_info={"mode": "mixed", "sequence": ["rn", "n", "r"]},
     )
 
     compressed_data = np.array([1, 2, 3, 4, 5], dtype=np.uint32)
@@ -154,8 +191,14 @@ def test_file_format():
         assert loaded_meta.vocab_size == 50257
         assert loaded_meta.original_hash == "abc123"
         assert list(loaded_data) == [1, 2, 3, 4, 5]
+        # New field must round-trip intact
+        assert loaded_meta.preproc_info == {
+            "mode": "mixed",
+            "sequence": ["rn", "n", "r"],
+        }
 
         print("  Чтение/запись: OK")
+        print("  preproc_info сохранён и восстановлен корректно")
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
@@ -163,7 +206,23 @@ def test_file_format():
     print("✓ Пройден")
 
 
+def test_model_key_validation():
+    """Bug 4 fix: bad model_key must raise in __init__, not during load."""
+    print("\n" + "=" * 60)
+    print("ТЕСТ: Ранняя валидация model_key")
+    print("=" * 60)
+
+    try:
+        Compressor(model_key="nonexistent-model")
+        raise AssertionError("Должна была сработать валидация")
+    except ValueError as e:
+        print(f"  Получено ожидаемое исключение: {str(e)[:80]}...")
+
+    print("✓ Пройден")
+
+
 def test_compression_lossless(model_key: str = "gpt2"):
+    """End-to-end lossless round-trip using a real language model."""
     print("\n" + "=" * 60)
     print(f"ТЕСТ: Сжатие без потерь (модель: {model_key})")
     print("=" * 60)
@@ -184,38 +243,98 @@ def test_compression_lossless(model_key: str = "gpt2"):
         compressed_path = os.path.join(tmpdir, "output.lmc")
         restored_path = os.path.join(tmpdir, "restored.txt")
 
-        with open(input_path, "w") as f:
-            f.write(test_text)
+        # Write in binary mode to guarantee exact byte content — avoids
+        # the OS adding platform-specific line endings on Windows.
+        with open(input_path, "wb") as f:
+            f.write(test_text.encode("utf-8"))
 
         original_size = os.path.getsize(input_path)
         print(f"  Исходный размер: {original_size} байт")
 
         compressor = Compressor(model_key=model_key)
-        comp_results = compressor.compress(input_path, compressed_path, verbose=True)
+        comp_results = compressor.compress(
+            input_path, compressed_path, verbose=True
+        )
 
         compressed_size = os.path.getsize(compressed_path)
         print(f"  Сжатый размер: {compressed_size} байт")
         print(f"  Коэффициент: {comp_results['ratio']:.4f}")
+        print(f"  BPC: {comp_results['bpc']:.4f}")
 
         decompressor = Decompressor()
-        decomp_results = decompressor.decompress(compressed_path, restored_path, verbose=True)
+        decomp_results = decompressor.decompress(
+            compressed_path, restored_path, verbose=True
+        )
 
-        with open(input_path, "r") as f:
-            original = f.read()
-        with open(restored_path, "r") as f:
-            restored = f.read()
+        # Compare raw bytes, not decoded strings — this is what "lossless" means
+        with open(input_path, "rb") as f:
+            original_bytes = f.read()
+        with open(restored_path, "rb") as f:
+            restored_bytes = f.read()
 
-        assert original == restored, "Восстановленные данные НЕ совпадают!"
-        assert decomp_results["is_lossless"], "Хеши не совпадают!"
+        assert original_bytes == restored_bytes, (
+            f"Восстановленные байты НЕ совпадают!\n"
+            f"  Оригинал: {len(original_bytes)} байт\n"
+            f"  Восстан.: {len(restored_bytes)} байт"
+        )
+        assert decomp_results["is_lossless"], "SHA-256 хеши не совпадают!"
 
-        print(f"\n  ✓ LOSSLESS ПОДТВЕРЖДЕНО: исходный == восстановленный")
+        print("\n  ✓ LOSSLESS ПОДТВЕРЖДЕНО (байт-в-байт)")
+
+    print("✓ Пройден")
+
+
+def test_compression_crlf_lossless(model_key: str = "gpt2"):
+    """
+    Bug 2 regression test: a file with \\r\\n line endings must
+    round-trip byte-exactly. In the old code this silently corrupted
+    to \\n and SHA-256 verification failed.
+    """
+    print("\n" + "=" * 60)
+    print(f"ТЕСТ: Lossless для CRLF-файла (модель: {model_key})")
+    print("=" * 60)
+
+    # Windows-style line endings
+    test_text = (
+        "First line with CRLF.\r\n"
+        "Second line here.\r\n"
+        "Mixed line\rwith CR only.\r\n"
+        "And a final LF\n"
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_path = os.path.join(tmpdir, "input.txt")
+        compressed_path = os.path.join(tmpdir, "output.lmc")
+        restored_path = os.path.join(tmpdir, "restored.txt")
+
+        with open(input_path, "wb") as f:
+            f.write(test_text.encode("utf-8"))
+
+        compressor = Compressor(model_key=model_key)
+        compressor.compress(input_path, compressed_path, verbose=False)
+
+        decompressor = Decompressor()
+        result = decompressor.decompress(
+            compressed_path, restored_path, verbose=False
+        )
+
+        with open(input_path, "rb") as f:
+            original_bytes = f.read()
+        with open(restored_path, "rb") as f:
+            restored_bytes = f.read()
+
+        assert original_bytes == restored_bytes, (
+            "CRLF не восстановлен побитово! Bug 2 регрессия."
+        )
+        assert result["is_lossless"]
+        print("  ✓ \\r\\n, \\r и \\n восстановлены побитово")
 
     print("✓ Пройден")
 
 
 def run_all_tests():
     print("=" * 60)
-    print("LMCodec v2.0 — Полный набор тестов")
+    print("LMCodec — Полный набор тестов")
     print("=" * 60)
 
     test_list_models()
@@ -223,14 +342,16 @@ def run_all_tests():
     test_preprocessing()
     test_context_manager()
     test_file_format()
+    test_model_key_validation()
 
-    print("\n⚠️  Следующий тест загружает модель GPT-2 (~500 MB).")
-    print("    Для пропуска нажмите Ctrl+C.\n")
+    print("\nСледующие тесты загружают модель GPT-2 (~500 MB).")
+    print("Для пропуска нажмите Ctrl+C.\n")
 
     try:
         test_compression_lossless("gpt2")
+        test_compression_crlf_lossless("gpt2")
     except KeyboardInterrupt:
-        print("\n  Пропущен по запросу пользователя.")
+        print("\n  Пропущено по запросу пользователя.")
 
     print("\n" + "=" * 60)
     print("ВСЕ ТЕСТЫ ПРОЙДЕНЫ")
